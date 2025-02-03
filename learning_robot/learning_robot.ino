@@ -1,37 +1,22 @@
-/*
- WiFi Web Server LED Blink
-
- A simple web server that lets you blink an LED via the web.
- This sketch will print the IP address of your WiFi Shield (once connected)
- to the Serial monitor. From there, you can open that address in a web browser
- to turn on and off the LED on pin 5.
-
- If the IP address of your shield is yourAddress:
- http://yourAddress/H turns the LED on
- http://yourAddress/L turns it off
-
- This example is written for a network using WPA2 encryption. For insecure
- WEP or WPA, change the Wifi.begin() call and use Wifi.setMinSecurity() accordingly.
-
- Circuit:
- * WiFi shield attached
- * LED attached to pin 5
-
- created for arduino 25 Nov 2012
- by Tom Igoe
-
-ported for sparkfun esp32
-31.01.2017 by Jan Hendrik Berlin
-
- */
+//main code for learning robot
 
 #include <WiFi.h>
+#include "VL53L1X.h"
 
-const char *ssid = "gamma";
-const char *password = "8b5bjz4zns";
 
-NetworkServer server(80);
+//sensor
+VL53L1X sensor;
 
+void sensor_init(VL53L1X::DistanceMode range_mode, bool high_speed) {
+  Wire.begin();
+  sensor.setTimeout(500);
+  sensor.init();
+  sensor.setDistanceMode(range_mode);  
+  int budget = high_speed ? 33000 : 140000;
+  sensor.setMeasurementTimingBudget(budget);
+}
+
+//motors
 int aone = 2;
 int atwo = 4;
 int bone = 5;
@@ -61,13 +46,18 @@ void drive_motors(int aspeed, int bspeed)
   }
 }
 
-float maxduty = 7500.0;
-float minduty = 2000.0;
+//servo
+
+float maxduty = 8200.0;
+float minduty = 1800.0;
 float angle2servo(int angle){
   return (float)angle * (maxduty - minduty) / 180.0 + minduty;
 }
 
 int angle = 0;
+
+//server
+NetworkServer server(80);
 
 void setup() {
 
@@ -83,19 +73,24 @@ void setup() {
 
   delay(10);
 
+  sensor_init(VL53L1X::Long, false);   
+
   // We start by connecting to a WiFi network
 
   Serial.println();
   Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
+  //Serial.print("Connecting to ");
+  //Serial.println(ssid);
 
+  /*
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
+  */
+  WiFi.softAP("harry2", NULL);
 
   Serial.println("");
   Serial.println("WiFi connected.");
@@ -107,7 +102,7 @@ void setup() {
 
 int last_check = 0;
 //time for each small scan
-int wait_milliseconds = 10;
+int wait_milliseconds = 20;
 
 //(180/5)+1
 int distances[37] = {0};
@@ -119,15 +114,18 @@ void loop() {
   if(millis() - last_check > wait_milliseconds){
     last_check = millis();
 
-    if(move_direction == 0){
+    int dist = sensor.readRangeSingleMillimeters();
+    distances[angle / 5] = dist;
+
+    if(spin_direction == 0){
       angle += 5;
       if(angle == 180){
-        move_direction = 1;
+        spin_direction = 1;
       }
     }else{
       angle -= 5;
       if(angle == 0){
-        move_direction = 0;
+        spin_direction = 0;
       }
     }
     ledcWrite(18, (int)angle2servo(angle)); 
@@ -155,7 +153,11 @@ void loop() {
 
             // the content of the HTTP response follows the header:
             // print radar scanning data
-            client.print("Click <a href=\"/H\">here</a> to turn the LED on pin 5 on.<br>");
+            for(int i = 0; i < 37; i++){
+              client.print(distances[i]);
+              client.print(" ");
+            }
+            client.println();
 
             // The HTTP response ends with another blank line:
             client.println();
@@ -170,31 +172,31 @@ void loop() {
 
         // Check to see if the client request was "GET /H" or "GET /L":
         if (currentLine.endsWith("GET /Q")) {
-          drive_motors(1, 0)
+          drive_motors(0, 1);
         }
         if (currentLine.endsWith("GET /W")) {
-          digitalWrite(5, LOW);  // GET /L turns the LED off
+          drive_motors(1, 1);  
         }
         if (currentLine.endsWith("GET /E")) {
-          digitalWrite(5, LOW);  // GET /L turns the LED off
+          drive_motors(1, 0);
         }
         if (currentLine.endsWith("GET /A")) {
-          digitalWrite(5, LOW);  // GET /L turns the LED off
+          drive_motors(-1, 1);
         }
         if (currentLine.endsWith("GET /S")) {
-          digitalWrite(5, LOW);  // GET /L turns the LED off
+          drive_motors(0, 0);
         }
         if (currentLine.endsWith("GET /D")) {
-          digitalWrite(5, LOW);  // GET /L turns the LED off
+          drive_motors(1, -1);
         }
         if (currentLine.endsWith("GET /Z")) {
-          digitalWrite(5, LOW);  // GET /L turns the LED off
+          drive_motors(0, -1);
         }
         if (currentLine.endsWith("GET /X")) {
-          digitalWrite(5, LOW);  // GET /L turns the LED off
+          drive_motors(-1, -1);
         }
         if (currentLine.endsWith("GET /C")) {
-          digitalWrite(5, LOW);  // GET /L turns the LED off
+          drive_motors(-1, 0);
         }
       }
     }
