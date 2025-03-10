@@ -22,6 +22,16 @@ int atwo = 4;
 int bone = 5;
 int btwo = 15;
 
+
+int doiblink = 0;
+int blinktime = 0;
+
+void quickblink(){
+  digitalWrite(23, HIGH);
+  doiblink = 1;
+  blinktime = millis() + 200;
+}
+
 void drive_motors(int aspeed, int bspeed)
 {
   if(aspeed > 0){
@@ -60,6 +70,11 @@ int angle = 0;
 NetworkServer server(80);
 
 void setup() {
+  pinMode(23, OUTPUT);
+  digitalWrite(23, HIGH);
+  delay(500);
+  digitalWrite(23, LOW);
+  delay(500);
 
   pinMode(aone, OUTPUT);
   pinMode(atwo, OUTPUT);
@@ -98,6 +113,10 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   server.begin();
+  digitalWrite(23, HIGH);
+  delay(500);
+  digitalWrite(23, LOW);
+  delay(500);
 }
 
 int last_check = 0;
@@ -111,6 +130,11 @@ int distances[37] = {0};
 int spin_direction = 0;
 
 void loop() {
+  if (doiblink == 1 && millis() >= blinktime){
+    doiblink = 0;
+    digitalWrite(23, LOW);
+  }
+  /*
   if(millis() - last_check > wait_milliseconds){
     last_check = millis();
 
@@ -130,6 +154,7 @@ void loop() {
     }
     ledcWrite(18, (int)angle2servo(angle)); 
   }
+  */
 
   NetworkClient client = server.accept();  // listen for incoming clients
 
@@ -153,12 +178,13 @@ void loop() {
 
             // the content of the HTTP response follows the header:
             // print radar scanning data
+            /*
             for(int i = 0; i < 37; i++){
               client.print(distances[i]);
               client.print(" ");
             }
             client.println();
-
+            */
             // The HTTP response ends with another blank line:
             client.println();
             // break out of the while loop:
@@ -200,6 +226,7 @@ void loop() {
           drive_motors(-dutycycle, 0);
         }
       }
+      quickblink();
     }
     // close the connection:
     client.stop();
