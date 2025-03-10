@@ -1,0 +1,818 @@
+<!DOCTYPE html><html lang="en"><head><meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://code.jquery.com https://unpkg.com https://d3js.org https://threejs.org https://cdn.plot.ly https://stackpath.bootstrapcdn.com https://maps.googleapis.com https://cdn.tailwindcss.com https://ajax.googleapis.com https://kit.fontawesome.com https://cdn.datatables.net https://maxcdn.bootstrapcdn.com https://code.highcharts.com https://tako-static-assets-production.s3.amazonaws.com https://www.youtube.com https://fonts.googleapis.com https://fonts.gstatic.com https://pfst.cf2.poecdn.net https://puc.poecdn.net https://i.imgur.com https://wikimedia.org https://*.icons8.com https://*.giphy.com https://picsum.photos https://images.unsplash.com; frame-src 'self' https://www.youtube.com https://trytako.com; child-src 'self'; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests; block-all-mixed-content;">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Maze Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+        }
+        
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        #game-canvas {
+            background-color: white;
+            border: 2px solid #333;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        #radar-display {
+            width: 100%;
+            max-width: 600px;
+            height: 100px;
+            background-color: #333;
+            border-radius: 5px;
+            display: flex;
+            align-items: flex-end;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+        
+        .radar-bar {
+            flex: 1;
+            background-color: #4CAF50;
+            margin: 0 1px;
+            transition: height 0.2s;
+            position: relative;
+        }
+        
+        .radar-value {
+            position: absolute;
+            bottom: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 10px;
+            white-space: nowrap;
+        }
+        
+        .controls {
+            margin-top: 20px;
+            text-align: center;
+            background-color: #333;
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+        }
+        
+        .button-panel {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background-color: #388E3C;
+        }
+        
+        .info-panel {
+            width: 100%;
+            max-width: 600px;
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #333;
+            color: white;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        #ai-decision {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        
+        @media (max-width: 600px) {
+            #game-canvas {
+                width: 100%;
+                height: auto;
+            }
+            
+            .radar-value {
+                font-size: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <h1>Robot Maze Game</h1>
+        <canvas id="game-canvas" width="600" height="400"></canvas>
+        <div id="radar-display"></div>
+        <div class="controls">
+            Use arrow keys to move: ↑ (forward), ↓ (backward), ← (turn left), → (turn right)
+        </div>
+        <div class="button-panel">
+            <button id="toggle-ai">Start AI</button>
+            <button id="reset-game">Reset Game</button>
+        </div>
+        <div class="info-panel">
+            <div>AI Status: <span id="ai-status">Disabled</span></div>
+            <div>Current Action: <span id="current-action">None</span></div>
+            <div>Reward: <span id="reward">0</span></div>
+            <div>Episodes: <span id="episodes">0</span></div>
+            <div id="ai-decision"></div>
+        </div>
+    </div>
+
+    <script>
+        // Game setup
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const radarDisplay = document.getElementById('radar-display');
+        const toggleAIButton = document.getElementById('toggle-ai');
+        const resetGameButton = document.getElementById('reset-game');
+        const aiStatusElement = document.getElementById('ai-status');
+        const currentActionElement = document.getElementById('current-action');
+        const rewardElement = document.getElementById('reward');
+        const episodesElement = document.getElementById('episodes');
+        const aiDecisionElement = document.getElementById('ai-decision');
+        
+        // Create radar bars
+        const radarBarsCount = 19;
+        for (let i = 0; i < radarBarsCount; i++) {
+            const bar = document.createElement('div');
+            bar.className = 'radar-bar';
+            
+            const value = document.createElement('div');
+            value.className = 'radar-value';
+            value.textContent = '0';
+            
+            bar.appendChild(value);
+            radarDisplay.appendChild(bar);
+        }
+        
+        const radarBars = document.querySelectorAll('.radar-bar');
+        const radarValues = document.querySelectorAll('.radar-value');
+        
+        // Robot properties
+        const robot = {
+            x: 50,
+            y: 50,
+            width: 20,
+            height: 30,
+            angle: 0,
+            speed: 0,
+            maxSpeed: 3,
+            rotationAmount: 3 * (Math.PI / 180),
+            acceleration: 0.1,
+            deceleration: 0.05,
+            radarRange: 200,
+            lastX: 50,
+            lastY: 50,
+            crashed: false
+        };
+        
+        // Maze walls
+        const walls = [
+            // Border walls
+            { x: 0, y: 0, width: canvas.width, height: 10 },
+            { x: 0, y: 0, width: 10, height: canvas.height },
+            { x: 0, y: canvas.height - 10, width: canvas.width, height: 10 },
+            { x: canvas.width - 10, y: 0, width: 10, height: canvas.height },
+            
+            // Inner walls
+            { x: 100, y: 50, width: 10, height: 200 },
+            { x: 200, y: 150, width: 200, height: 10 },
+            { x: 200, y: 150, width: 10, height: 150 },
+            { x: 300, y: 50, width: 10, height: 100 },
+            { x: 400, y: 50, width: 10, height: 250 },
+            { x: 300, y: 300, width: 200, height: 10 },
+            { x: 100, y: 300, width: 100, height: 10 },
+            { x: 500, y: 150, width: 50, height: 10 }
+        ];
+        
+        // Finish area
+        const finish = {
+            x: 500,
+            y: 300,
+            width: 50,
+            height: 50
+        };
+        
+        // Controls state
+        const keys = {
+            ArrowUp: false,
+            ArrowDown: false,
+            ArrowLeft: false,
+            ArrowRight: false
+        };
+        
+        // AI state
+        let aiEnabled = false;
+        let cumulativeReward = 0;
+        let episodes = 0;
+        let radarData = Array(radarBarsCount).fill(0);
+        let currentRobotAction = "None";
+        
+        // Navigation parameters
+        const nav = {
+            updateInterval: 5,
+            frameCounter: 0,
+            movementPenalty: -0.1,
+            crashPenalty: -100000,
+            progressReward: 1,
+            finishReward: 100,
+            noMovementCounter: 0,
+            noMovementThreshold: 40,
+            minWallDistance: 30,
+            lastAction: null,
+            recentActions: [],
+            recentActionsMax: 10,
+            stuckDetectionCounter: 0
+        };
+        
+        // Key event listeners
+        window.addEventListener('keydown', (e) => {
+            if (keys.hasOwnProperty(e.code)) {
+                keys[e.code] = true;
+                e.preventDefault();
+            }
+        });
+        
+        window.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.code)) {
+                keys[e.code] = false;
+                e.preventDefault();
+            }
+        });
+        
+        // Button listeners
+        toggleAIButton.addEventListener('click', () => {
+            aiEnabled = !aiEnabled;
+            aiStatusElement.textContent = aiEnabled ? 'Enabled' : 'Disabled';
+            toggleAIButton.textContent = aiEnabled ? 'Stop AI' : 'Start AI';
+            
+            if (!aiEnabled) {
+                currentActionElement.textContent = "None";
+                aiDecisionElement.textContent = "";
+            }
+        });
+        
+        resetGameButton.addEventListener('click', () => {
+            resetGame();
+        });
+        
+        // Game loop functions
+        function updateRobot() {
+            // Save last position
+            robot.lastX = robot.x;
+            robot.lastY = robot.y;
+            robot.crashed = false;
+            
+            if (aiEnabled) {
+                // AI control
+                nav.frameCounter++;
+                
+                if (nav.frameCounter >= nav.updateInterval) {
+                    nav.frameCounter = 0;
+                    
+                    // Deterministic navigation approach
+                    const action = determineAction();
+                    applyAction(action);
+                    
+                    // Track action
+                    nav.recentActions.push(action);
+                    if (nav.recentActions.length > nav.recentActionsMax) {
+                        nav.recentActions.shift();
+                    }
+                    
+                    // Calculate reward
+                    const reward = calculateReward();
+                    cumulativeReward += reward;
+                    rewardElement.textContent = cumulativeReward.toFixed(2);
+                    
+                    // Update UI
+                    currentActionElement.textContent = action;
+                }
+            } else {
+                // Handle keyboard input for robot movement
+                if (keys.ArrowUp) {
+                    robot.speed = Math.min(robot.speed + robot.acceleration, robot.maxSpeed);
+                } else if (keys.ArrowDown) {
+                    robot.speed = Math.max(robot.speed - robot.acceleration, -robot.maxSpeed);
+                } else {
+                    // Apply deceleration when no keys are pressed
+                    if (robot.speed > 0) {
+                        robot.speed = Math.max(0, robot.speed - robot.deceleration);
+                    } else if (robot.speed < 0) {
+                        robot.speed = Math.min(0, robot.speed + robot.deceleration);
+                    }
+                }
+                
+                if (keys.ArrowLeft) {
+                    robot.angle -= robot.rotationAmount;
+                } else if (keys.ArrowRight) {
+                    robot.angle += robot.rotationAmount;
+                }
+            }
+            
+            // Calculate new position
+            const nextX = robot.x + Math.cos(robot.angle) * robot.speed;
+            const nextY = robot.y + Math.sin(robot.angle) * robot.speed;
+            
+            // Check collision with walls
+            const robotBoundingBox = {
+                x: nextX - robot.width / 2,
+                y: nextY - robot.height / 2,
+                width: robot.width,
+                height: robot.height
+            };
+            
+            let collision = false;
+            for (const wall of walls) {
+                if (checkCollision(robotBoundingBox, wall)) {
+                    collision = true;
+                    robot.crashed = true;
+                    break;
+                }
+            }
+            
+            // Update position if no collision
+            if (!collision) {
+                robot.x = nextX;
+                robot.y = nextY;
+            } else {
+                // Stop the robot if collision
+                robot.speed = 0;
+                
+                if (aiEnabled) {
+                    // Reset robot if AI crashed
+                    setTimeout(() => {
+                        resetRobot();
+                        episodes++;
+                        episodesElement.textContent = episodes;
+                    }, 500);
+                }
+            }
+            
+            // Check if robot is not moving
+            if (aiEnabled) {
+                const distance = Math.sqrt(
+                    Math.pow(robot.x - robot.lastX, 2) + 
+                    Math.pow(robot.y - robot.lastY, 2)
+                );
+                
+                if (distance < 0.1) {
+                    nav.noMovementCounter++;
+                    if (nav.noMovementCounter > nav.noMovementThreshold) {
+                        // Robot is stuck, reset
+                        //resetRobot();
+                        episodes++;
+                        episodesElement.textContent = episodes;
+                    }
+                } else {
+                    nav.noMovementCounter = 0;
+                }
+                
+                // Check for repetitive actions that might indicate being stuck
+                if (nav.recentActions.length === nav.recentActionsMax) {
+                    const allSame = nav.recentActions.every(a => a === nav.recentActions[0]);
+                    if (allSame) {
+                        nav.stuckDetectionCounter++;
+                        if (nav.stuckDetectionCounter > 5) { // If stuck in repetitive actions for too long
+                            //resetRobot();
+                            episodes++;
+                            episodesElement.textContent = episodes;
+                            nav.stuckDetectionCounter = 0;
+                        }
+                    } else {
+                        nav.stuckDetectionCounter = 0;
+                    }
+                }
+            }
+            
+            // Check if robot reached the finish
+            const robotCenter = {
+                x: robot.x,
+                y: robot.y,
+                width: 1,
+                height: 1
+            };
+            
+            if (checkCollision(robotCenter, finish)) {
+                if (aiEnabled) {
+                    cumulativeReward += nav.finishReward;
+                    rewardElement.textContent = cumulativeReward.toFixed(2);
+                    setTimeout(() => {
+                        resetRobot();
+                        episodes++;
+                        episodesElement.textContent = episodes;
+                    }, 500);
+                } else {
+                    alert('Congratulations! You reached the finish!');
+                    resetGame();
+                }
+            }
+        }
+        
+        function resetRobot() {
+            robot.x = 50;
+            robot.y = 50;
+            robot.angle = 0;
+            robot.speed = 0;
+            robot.lastX = 50;
+            robot.lastY = 50;
+            robot.crashed = false;
+            nav.noMovementCounter = 0;
+            nav.recentActions = [];
+            nav.stuckDetectionCounter = 0;
+        }
+        
+        function resetGame() {
+            resetRobot();
+            cumulativeReward = 0;
+            episodes = 0;
+            episodesElement.textContent = episodes;
+            rewardElement.textContent = '0';
+            currentActionElement.textContent = "None";
+            aiDecisionElement.textContent = "";
+        }
+        
+        function updateRadar() {
+            const radarAngles = [];
+            
+            // Calculate 19 radar lines from -90 to +90 degrees relative to robot angle
+            for (let i = 0; i < radarBarsCount; i++) {
+                const relativeAngle = -Math.PI / 2 + (i * Math.PI / (radarBarsCount - 1));
+                radarAngles.push(robot.angle + relativeAngle);
+            }
+            
+            // Cast rays for each radar angle
+            for (let i = 0; i < radarAngles.length; i++) {
+                const angle = radarAngles[i];
+                const radarX = Math.cos(angle);
+                const radarY = Math.sin(angle);
+                
+                let distance = robot.radarRange;
+                const rayStart = { x: robot.x, y: robot.y };
+                
+                // Find closest intersection with walls
+                for (const wall of walls) {
+                    const intersection = rayWallIntersection(
+                        rayStart, 
+                        { x: robot.x + radarX * robot.radarRange, y: robot.y + radarY * robot.radarRange },
+                        wall
+                    );
+                    
+                    if (intersection && intersection.distance < distance) {
+                        distance = intersection.distance;
+                    }
+                }
+                
+                // Store radar data for AI
+                radarData[i] = distance;
+                
+                // Update radar display
+                const heightPercent = Math.max(0, 100 - (distance / robot.radarRange * 100));
+                radarBars[i].style.height = `${heightPercent}%`;
+                radarValues[i].textContent = Math.round(distance);
+            }
+        }
+        
+        function drawGame() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw finish area
+            ctx.fillStyle = '#4CAF50';
+            ctx.fillRect(finish.x, finish.y, finish.width, finish.height);
+            ctx.fillStyle = 'white';
+            ctx.font = '12px Arial';
+            ctx.fillText('FINISH', finish.x + 5, finish.y + 30);
+            
+            // Draw walls
+            ctx.fillStyle = '#333';
+            for (const wall of walls) {
+                ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+            }
+            
+            // Draw robot
+            ctx.save();
+            ctx.translate(robot.x, robot.y);
+            ctx.rotate(robot.angle);
+            
+            // Robot body
+            ctx.fillStyle = robot.crashed ? '#FF5252' : '#2196F3';
+            ctx.fillRect(-robot.width / 2, -robot.height / 2, robot.width, robot.height);
+            
+            // Robot direction indicator
+            ctx.fillStyle = '#FFC107';
+            ctx.beginPath();
+            ctx.moveTo(robot.width / 2, 0);
+            ctx.lineTo(robot.width / 2 - 5, -5);
+            ctx.lineTo(robot.width / 2 - 5, 5);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.restore();
+            
+            // Draw radar visualization
+            ctx.save();
+            ctx.translate(robot.x, robot.y);
+            ctx.rotate(robot.angle);
+            
+            // Draw radar arc
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 193, 7, 0.2)';
+            ctx.lineWidth = 1;
+            ctx.arc(0, 0, robot.radarRange, -Math.PI / 2, Math.PI / 2);
+            ctx.stroke();
+            
+            // Draw radar lines
+            for (let i = 0; i < radarBarsCount; i++) {
+                const relativeAngle = -Math.PI / 2 + (i * Math.PI / (radarBarsCount - 1));
+                const distance = parseInt(radarValues[i].textContent);
+                
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(
+                    Math.cos(relativeAngle) * distance,
+                    Math.sin(relativeAngle) * distance
+                );
+                ctx.strokeStyle = 'rgba(255, 193, 7, 0.5)';
+                ctx.stroke();
+                
+                // Draw radar point
+                ctx.beginPath();
+                ctx.arc(
+                    Math.cos(relativeAngle) * distance,
+                    Math.sin(relativeAngle) * distance,
+                    2, 0, Math.PI * 2
+                );
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+                ctx.fill();
+            }
+            
+            ctx.restore();
+            
+            // Draw path to finish (for debug)
+            if (aiEnabled) {
+                ctx.beginPath();
+                ctx.moveTo(robot.x, robot.y);
+                ctx.lineTo(finish.x + finish.width/2, finish.y + finish.height/2);
+                ctx.strokeStyle = 'rgba(76, 175, 80, 0.2)';
+                ctx.stroke();
+            }
+        }
+        
+        // Helper functions
+        function checkCollision(rect1, rect2) {
+            return (
+                rect1.x < rect2.x + rect2.width &&
+                rect1.x + rect1.width > rect2.x &&
+                rect1.y < rect2.y + rect2.height &&
+                rect1.y + rect1.height > rect2.y
+            );
+        }
+        
+        function rayWallIntersection(rayStart, rayEnd, wall) {
+            // Ray segment
+            const ray = {
+                x1: rayStart.x,
+                y1: rayStart.y,
+                x2: rayEnd.x,
+                y2: rayEnd.y
+            };
+            
+            // Check intersection with each edge of the wall
+            const edges = [
+                { x1: wall.x, y1: wall.y, x2: wall.x + wall.width, y2: wall.y }, // Top
+                { x1: wall.x, y1: wall.y + wall.height, x2: wall.x + wall.width, y2: wall.y + wall.height }, // Bottom
+                { x1: wall.x, y1: wall.y, x2: wall.x, y2: wall.y + wall.height }, // Left
+                { x1: wall.x + wall.width, y1: wall.y, x2: wall.x + wall.width, y2: wall.y + wall.height } // Right
+            ];
+            
+            let closestIntersection = null;
+            let minDistance = Infinity;
+            
+            for (const edge of edges) {
+                const intersection = lineIntersection(ray, edge);
+                if (intersection) {
+                    const distance = Math.sqrt(
+                        Math.pow(intersection.x - rayStart.x, 2) +
+                        Math.pow(intersection.y - rayStart.y, 2)
+                    );
+                    
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        closestIntersection = {
+                            x: intersection.x,
+                            y: intersection.y,
+                            distance: distance
+                        };
+                    }
+                }
+            }
+            
+            return closestIntersection;
+        }
+        
+        function lineIntersection(line1, line2) {
+            const x1 = line1.x1, y1 = line1.y1;
+            const x2 = line1.x2, y2 = line1.y2;
+            const x3 = line2.x1, y3 = line2.y1;
+            const x4 = line2.x2, y4 = line2.y2;
+            
+            const denominator = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+            
+            // Lines are parallel or coincident
+            if (denominator === 0) {
+                return null;
+            }
+            
+            const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denominator;
+            const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denominator;
+            
+            // Check if intersection is within both line segments
+            if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+                const x = x1 + ua * (x2 - x1);
+                const y = y1 + ua * (y2 - y1);
+                return { x, y };
+            }
+            
+            return null;
+        }
+        
+        // Deterministic navigation functions
+        function determineAction() {
+            // Get the direction towards the finish
+            const dx = finish.x + finish.width/2 - robot.x;
+            const dy = finish.y + finish.height/2 - robot.y;
+            const targetAngle = Math.atan2(dy, dx);
+            const relativeAngle = normalizeAngle(targetAngle - robot.angle);
+            
+            // Get radar data
+            const frontIndex = Math.floor(radarBarsCount / 2); // Center radar
+            const frontDistance = radarData[frontIndex];
+            const leftIndex = Math.floor(frontIndex / 2);      // Left radar
+            const leftDistance = radarData[leftIndex];
+            const rightIndex = frontIndex + Math.floor(frontIndex / 2); // Right radar
+            const rightDistance = radarData[rightIndex];
+            
+            // Determine critical sensor readings
+            const isWallAhead = frontDistance < nav.minWallDistance * 1.5;
+            const isWallLeft = leftDistance < nav.minWallDistance;
+            const isWallRight = rightDistance < nav.minWallDistance;
+            
+            // Define decision logic variables
+            let action = 'forward'; // Default action
+            let reason = '';
+            
+            // Check if turned in wrong direction
+            if (Math.abs(relativeAngle) > Math.PI/2) {
+                // Target is behind us, turn around
+                action = relativeAngle > 0 ? 'left' : 'right';
+                reason = 'Turning around to face target';
+            }
+            // Wall avoidance has higher priority
+            else if (isWallAhead) {
+                // Wall ahead, need to turn
+                if (leftDistance > rightDistance) {
+                    action = 'left';
+                    reason = 'Wall ahead, turning left (more space)';
+                } else {
+                    action = 'right';
+                    reason = 'Wall ahead, turning right (more space)';
+                }
+            }
+            // Direction correction
+            else if (Math.abs(relativeAngle) > Math.PI/16) {
+                // Need to adjust direction to face target
+                if (relativeAngle > 0) {
+                    action = 'left';
+                    reason = 'Adjusting direction left to face target';
+                } else {
+                    action = 'right';
+                    reason = 'Adjusting direction right to face target';
+                }
+            }
+            // Check sides for obstacles
+            else if (isWallLeft && !isWallRight) {
+                // Wall on left but not right, nudge right
+                action = 'right';
+                reason = 'Wall on left, nudging right';
+            }
+            else if (isWallRight && !isWallLeft) {
+                // Wall on right but not left, nudge left
+                action = 'left';
+                reason = 'Wall on right, nudging left';
+            }
+            // Default: move forward toward target
+            else {
+                action = 'forward';
+                reason = 'Moving forward toward target';
+            }
+            
+            // Avoid repetitive turning by occasionally forcing forward movement
+            if (nav.recentActions.length >= 4) {
+                const lastFour = nav.recentActions.slice(-4);
+                const isAlternating = 
+                    (lastFour[0] === 'left' && lastFour[1] === 'right' && 
+                     lastFour[2] === 'left' && lastFour[3] === 'right') ||
+                    (lastFour[0] === 'right' && lastFour[1] === 'left' && 
+                     lastFour[2] === 'right' && lastFour[3] === 'left');
+                     
+                if (isAlternating && !isWallAhead) {
+                    action = 'forward';
+                    reason = 'Breaking out of turn cycle';
+                }
+            }
+            
+            // Update decision display
+            aiDecisionElement.textContent = reason;
+            
+            return action;
+        }
+        
+        function normalizeAngle(angle) {
+            // Normalize angle to be between -PI and PI
+            while (angle > Math.PI) angle -= 2 * Math.PI;
+            while (angle < -Math.PI) angle += 2 * Math.PI;
+            return angle;
+        }
+        
+        function applyAction(action) {
+            switch (action) {
+                case 'forward':
+                    robot.speed = Math.min(robot.speed + robot.acceleration, robot.maxSpeed);
+                    break;
+                case 'backward':
+                    robot.speed = Math.max(robot.speed - robot.acceleration, -robot.maxSpeed);
+                    break;
+                case 'left':
+                    robot.angle -= robot.rotationAmount;
+                    break;
+                case 'right':
+                    robot.angle += robot.rotationAmount;
+                    break;
+            }
+        }
+        
+        function calculateReward() {
+            //let reward = nav.movementPenalty; // Small penalty for each step
+            let reward = 0;
+
+            if (robot.crashed) {
+                reward += nav.crashPenalty;
+                return reward;
+            }
+            
+            // Reward for movement towards goal
+            const oldDist = distanceToFinish(robot.lastX, robot.lastY);
+            const newDist = distanceToFinish(robot.x, robot.y);
+            const progressReward = (oldDist - newDist) * nav.progressReward;
+            reward += progressReward;
+
+            reward -= radarData[10];
+            
+            // Penalty for no movement
+            if (Math.abs(robot.x - robot.lastX) < 0.1 && Math.abs(robot.y - robot.lastY) < 0.1) {
+                reward -= 1;
+            }
+            
+            return reward;
+        }
+        
+        function distanceToFinish(x, y) {
+            const finishCenterX = finish.x + finish.width / 2;
+            const finishCenterY = finish.y + finish.height / 2;
+            return Math.sqrt(Math.pow(x - finishCenterX, 2) + Math.pow(y - finishCenterY, 2));
+        }
+        
+        // Game loop
+        function gameLoop() {
+            updateRobot();
+            updateRadar();
+            drawGame();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start the game
+        gameLoop();
+    </script>
+
+
+</body></html>
