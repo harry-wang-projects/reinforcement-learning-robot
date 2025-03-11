@@ -51,9 +51,6 @@ float angle2servo(int angle){
 
 int angle = 0;
 
-//server
-NetworkServer server(80);
-
 void setup() {
   pinMode(23, OUTPUT);
   digitalWrite(23, HIGH);
@@ -114,17 +111,19 @@ void loop() {
   */
 
 
-  drive_motors(dutycycle, dutycycle);
+  analogWrite(aone, 150);
+  analogWrite(atwo, 0);
+  analogWrite(bone, 150);
+  analogWrite(btwo, 0);
   delay(1000);
-  drive_motors(dutycycle, 0);
+  analogWrite(aone, 0);
+  analogWrite(atwo, 0);
+  analogWrite(bone, 0);
+  analogWrite(btwo, 0);
   delay(1000);
-  drive_motors(dutycycle, -dutycycle);
+  analogWrite(aone, 0);
+  analogWrite(atwo, 150);
+  analogWrite(bone, 0);
+  analogWrite(btwo, 150);
   delay(1000);
-  drive_motors(dutycycle, dutycycle);
-  delay(1000);
-  drive_motors(0, dutycycle);
-  delay(1000);
-  drive_motors(-dutycycle, dutycycle);
-  delay(1000);
-
 }

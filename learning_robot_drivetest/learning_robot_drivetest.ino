@@ -41,8 +41,8 @@ void drive_motors(int aspeed, int bspeed)
     analogWrite(aone, 0);
     analogWrite(atwo, -aspeed);
   }else{
-    digitalWrite(aone, LOW);
-    digitalWrite(atwo, LOW);
+    analogWrite(aone, 0);
+    analogWrite(atwo, 0);
   }
   if(bspeed > 0){
     analogWrite(bone, bspeed);
@@ -51,8 +51,8 @@ void drive_motors(int aspeed, int bspeed)
     analogWrite(bone, 0);
     analogWrite(btwo, -bspeed);
   }else{
-    digitalWrite(bone, LOW);
-    digitalWrite(btwo, LOW);
+    analogWrite(bone, 0);
+    analogWrite(btwo, 0);
   }
 }
 
