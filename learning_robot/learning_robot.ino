@@ -4,6 +4,16 @@
 #include "VL53L1X.h"
 
 
+//blinking
+int doiblink = 0;
+int blinktime = 0;
+
+void quickblink(){
+  digitalWrite(23, HIGH);
+  doiblink = 1;
+  blinktime = millis() + 200;
+}
+
 //sensor
 VL53L1X sensor;
 
@@ -22,6 +32,12 @@ int atwo = 4;
 int bone = 5;
 int btwo = 15;
 
+//motor speeds
+int atarget = 0;
+int btarget = 0;
+int acurrent = 0;
+int bcurrent = 0;
+
 void drive_motors(int aspeed, int bspeed)
 {
   if(aspeed > 0){
@@ -31,8 +47,8 @@ void drive_motors(int aspeed, int bspeed)
     analogWrite(aone, 0);
     analogWrite(atwo, -aspeed);
   }else{
-    digitalWrite(aone, LOW);
-    digitalWrite(atwo, LOW);
+    analogWrite(aone, 0);
+    analogWrite(atwo, 0);
   }
   if(bspeed > 0){
     analogWrite(bone, bspeed);
@@ -41,9 +57,39 @@ void drive_motors(int aspeed, int bspeed)
     analogWrite(bone, 0);
     analogWrite(btwo, -bspeed);
   }else{
-    digitalWrite(bone, LOW);
-    digitalWrite(btwo, LOW);
+    analogWrite(bone, 0);
+    analogWrite(btwo, 0);
   }
+}
+
+int lastmod_millis = 0;
+void change_speed()
+{
+  int achange = atarget - acurrent;
+  if(achange > 30){
+    acurrent += 30;
+  }else if (achange < -30){
+    acurrent -= 30;
+  }else{
+    acurrent += achange;
+  }
+  int bchange = btarget - bcurrent;
+  if(bchange > 30){
+    bcurrent += 30;
+  }else if (bchange < -30){
+    bcurrent -= 30;
+  }else{
+    bcurrent += bchange;
+  }
+  Serial.printf("%d %d\n", acurrent, bcurrent);
+  if(achange != 0 || bchange != 0)
+    drive_motors(acurrent, bcurrent);
+}
+
+void set_speed(int newa, int newb)
+{
+  atarget = newa;
+  btarget = newb;
 }
 
 //servo
@@ -60,11 +106,20 @@ int angle = 0;
 NetworkServer server(80);
 
 void setup() {
+  pinMode(23, OUTPUT);
+  digitalWrite(23, HIGH);
+  delay(500);
+  digitalWrite(23, LOW);
+  delay(500);
 
   pinMode(aone, OUTPUT);
   pinMode(atwo, OUTPUT);
   pinMode(bone, OUTPUT);
   pinMode(btwo, OUTPUT);
+  analogWrite(aone, LOW);
+  analogWrite(atwo, LOW);
+  analogWrite(bone, LOW);
+  analogWrite(btwo, LOW);
 
   ledcAttach(18, 50, 16); // channel 1, 50 Hz, 16-bit width
   ledcWrite(18, 3 * 770 + 1638); 
@@ -98,6 +153,10 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   server.begin();
+  digitalWrite(23, HIGH);
+  delay(500);
+  digitalWrite(23, LOW);
+  delay(500);
 }
 
 int last_check = 0;
@@ -111,6 +170,19 @@ int distances[37] = {0};
 int spin_direction = 0;
 
 void loop() {
+  //blinking stuff
+  if (doiblink == 1 && millis() >= blinktime){
+    doiblink = 0;
+    digitalWrite(23, LOW);
+  }
+
+  //motor speed changing
+  if(millis() >= lastmod_millis + 100){
+    change_speed();
+    lastmod_millis = millis();
+  }
+
+  
   if(millis() - last_check > wait_milliseconds){
     last_check = millis();
 
@@ -130,6 +202,7 @@ void loop() {
     }
     ledcWrite(18, (int)angle2servo(angle)); 
   }
+  
 
   NetworkClient client = server.accept();  // listen for incoming clients
 
@@ -153,12 +226,13 @@ void loop() {
 
             // the content of the HTTP response follows the header:
             // print radar scanning data
+            
             for(int i = 0; i < 37; i++){
               client.print(distances[i]);
               client.print(" ");
             }
             client.println();
-
+            
             // The HTTP response ends with another blank line:
             client.println();
             // break out of the while loop:
@@ -173,33 +247,34 @@ void loop() {
         int dutycycle = 150;
         // Check to see if the client request was "GET /H" or "GET /L":
         if (currentLine.endsWith("GET /Q")) {
-          drive_motors(0, dutycycle);
+          set_speed(0, dutycycle);
         }
         if (currentLine.endsWith("GET /W")) {
-          drive_motors(dutycycle, dutycycle);  
+          set_speed(dutycycle, dutycycle);  
         }
         if (currentLine.endsWith("GET /E")) {
-          drive_motors(dutycycle, 0);
+          set_speed(dutycycle, 0);
         }
         if (currentLine.endsWith("GET /A")) {
-          drive_motors(-dutycycle, dutycycle);
+          set_speed(-dutycycle, dutycycle);
         }
         if (currentLine.endsWith("GET /S")) {
-          drive_motors(0, 0);
+          set_speed(0, 0);
         }
         if (currentLine.endsWith("GET /D")) {
-          drive_motors(dutycycle, -dutycycle);
+          set_speed(dutycycle, -dutycycle);
         }
         if (currentLine.endsWith("GET /Z")) {
-          drive_motors(0, -dutycycle);
+          set_speed(0, -dutycycle);
         }
         if (currentLine.endsWith("GET /X")) {
-          drive_motors(-dutycycle, -dutycycle);
+          set_speed(-dutycycle, -dutycycle);
         }
         if (currentLine.endsWith("GET /C")) {
-          drive_motors(-dutycycle, 0);
+          set_speed(-dutycycle, 0);
         }
       }
+      quickblink();
     }
     // close the connection:
     client.stop();

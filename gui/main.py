@@ -60,7 +60,7 @@ def main():
 
     #main loop
     while True:
-        """
+        
         if time() - last_time > 1:
             screen.fill(screen_color)
             webstring = requests.get("http://192.168.4.1").text
@@ -82,7 +82,7 @@ def main():
             
             pygame.display.flip()        
             last_time = time()
-        """
+        
 
         for events in pygame.event.get():
             if events.type == QUIT:
